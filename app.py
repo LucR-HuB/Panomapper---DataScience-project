@@ -1,6 +1,6 @@
 import streamlit as st
 import folium
-from streamlit_folium import folium_static, st_folium
+from streamlit_folium import folium_static
 from folium.raster_layers import WmsTileLayer
 import json
 import requests
