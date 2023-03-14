@@ -82,6 +82,9 @@ def geocode(address):
 # Retrieving Lat/Lon of the address and updating the map
 if address:
     address_coordinates = geocode(address)
+    if address_coordinates:
+        address_coordinates = [float(address_coordinates[0]), float(address_coordinates[1])]
+
     m = folium.Map(location=[address_coordinates[0], address_coordinates[1]], zoom_start=13, tiles=final_url, attr='IGN-F/Géoportail', max_zoom = 19)
     folium.Marker(location=address_coordinates, tooltip=address).add_to(m)
 
