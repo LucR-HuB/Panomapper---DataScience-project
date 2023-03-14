@@ -183,7 +183,7 @@ if filtered_detections:
 ##################################### DISPLAYING THE MAP ############################################
 
 
-folium_static(m, width=1300, height=800)
+folium_static(m, width=1300, height=800)    
 
 
 ##################################### TILES DISPLAY ############################################
