@@ -1,6 +1,6 @@
 import streamlit as st
 import folium
-from streamlit_folium import folium_static, st_folium
+from streamlit_folium import folium_static
 from folium.raster_layers import WmsTileLayer
 import json
 import requests
@@ -180,7 +180,6 @@ elif global_heatmap:
     folium_static(m3, width=1300, height=800)
 
 
-# Si le bouton "DETECT!" est cliqué, afficher la carte principale dans le conteneur vide
 else:
     if not address_coordinates and run_detection:
         '''
