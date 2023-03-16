@@ -1,71 +1,23 @@
 import streamlit as st
 import folium
-from streamlit_folium import folium_static
+from streamlit_folium import folium_static, st_folium
 from folium.raster_layers import WmsTileLayer
 import json
 import requests
 import os
-from shapely.geometry import shape, Point
+from shapely.geometry import Point, Polygon, shape
+from folium.plugins import HeatMap
+from folium.plugins import MarkerCluster
 
 st.set_page_config(layout="wide")
 
 '''
 # 🌍 Welcome to PanoMapper! 🛸
 '''
+total_detections = 0
+total_surface = 0.0
+total_kWp = 0.0
 
-
-
-########################### LOADING TILES GEOJSON FROM GOOGLE DRIVE #################################
-
-# URL
-tiles_url = "https://drive.google.com/uc?id=10JA-3LG6QMX_mC9Z2Ll1z8xT5Oc5La5Y"
-
-# File download
-response_tiles = requests.get(tiles_url)
-response_tiles.raise_for_status()
-
-# Loading file as GeoJSON
-tiles_geojson = json.loads(response_tiles.text)
-
-########################### LOADING DETECTIONS GEOJSON FROM GOOGLE DRIVE #############################
-
-# URL
-detections_url = "https://drive.google.com/uc?id=18GQ7-AlPia92Um6wTPyqXpMeVyVqcJkd"
-
-# File download
-response_detections = requests.get(detections_url)
-response_detections.raise_for_status()
-
-# Loading file as GeoJSON
-detections_geojson = json.loads(response_detections.text)
-
-
-##################################### BASE MAP CREATION ############################################
-
-# Instanciating a folium map centered on Bordeaux
-latitude = 44.856177683344065
-longitude = -0.5624631313653328
-
-m = folium.Map(location=[latitude, longitude], zoom_start=13)
-
-# Adding sat images from WMS ortho geoportail to the map
-base_url = "https://wxs.ign.fr/essentiels/geoportail/wmts"
-final_url = "https://wxs.ign.fr/essentiels/geoportail/wmts?layer=ORTHOIMAGERY.ORTHOPHOTOS&tilematrixset=PM&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/jpeg&TileCol={x}&TileRow={y}&TileMatrix={z}&STYLE=normal"
-
-m = folium.Map(location=[latitude, longitude], zoom_start=13, tiles=final_url, attr='IGN-F/Géoportail', max_zoom = 19)
-
-
-##################################### USER ADRESS ############################################
-
-'''
-
-## Type your address below to start detection in your neibourhood! :robot_face:
-'''
-address = st.text_input('  ')
-address_coordinates = ''
-
-
-# Function to retrieve Lat/Lon from address using Nominatim API
 def geocode(address):
 
         url = "https://nominatim.openstreetmap.org/search?"
@@ -79,19 +31,46 @@ def geocode(address):
                 return [json_response[0]['lat'], json_response[0]['lon']]
         return [0, 0]
 
-# Retrieving Lat/Lon of the address and updating the map
+def remove_marker(e):
+    marker = e.target
+    marker_cluster.remove_layer(marker)
+
+# Charger les tuiles GeoJSON depuis Google Drive
+with open("dalles_ign_33_WGS84.geojson", "r") as f:
+    tiles_geojson = json.load(f)
+
+# Charger les détections GeoJSON depuis Google Drive
+with open("arrays_33.geojson", "r") as f:
+    detections_geojson = json.load(f)
+
+with open('array_33_centroides.geojson') as f:
+    data = json.load(f)
+
+
+# Création de la carte de base
+latitude = 44.856177683344065
+longitude = -0.5624631313653328
+
+base_url = "https://wxs.ign.fr/essentiels/geoportail/wmts"
+final_url = "https://wxs.ign.fr/essentiels/geoportail/wmts?layer=ORTHOIMAGERY.ORTHOPHOTOS&tilematrixset=PM&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/jpeg&TileCol={x}&TileRow={y}&TileMatrix={z}&STYLE=normal"
+
+m = folium.Map(location=[latitude, longitude], zoom_start=13, tiles=final_url, attr='IGN-F/Géoportail', max_zoom = 19)
+
+global_heatmap = st.button("GLOBAL HEATMAP")
+
+'''
+## Type your address below to start detection in your neibourhood! :robot_face:
+'''
+
+address = st.text_input('  ')
+address_coordinates = ''
+
 if address:
-    address_coordinates = geocode(address)
-    if address_coordinates:
-        address_coordinates = [float(address_coordinates[0]), float(address_coordinates[1])]
-
-    m = folium.Map(location=[address_coordinates[0], address_coordinates[1]], zoom_start=13, tiles=final_url, attr='IGN-F/Géoportail', max_zoom = 19)
+    address_coordinates = [float(coord) for coord in geocode(address)]
+    m = folium.Map(location=[address_coordinates[0], address_coordinates[1]], zoom_start=28, tiles=final_url, attr='IGN-F/Géoportail', max_zoom = 19)
     folium.Marker(location=address_coordinates, tooltip=address).add_to(m)
-
-
-##################################### RETRIEVING TILE NAMES FROM USER ADDRESS ############################################
-
-# Retrieving name of the tile covering the address
+    # Centering the map on the address
+    m.fit_bounds([[address_coordinates[0], address_coordinates[1]], [address_coordinates[0], address_coordinates[1]]])
 
 tile_name = ''
 
@@ -100,11 +79,8 @@ if address_coordinates:
         tile_geom = shape(tile["geometry"])
         if tile_geom.contains(Point(address_coordinates[1], address_coordinates[0])):
             tile_name = tile["properties"]["NOM"]
-            # st.write(f'{tile_name}')
-
 
 # Retrieving surrounding tiles
-
 if tile_name:
 
     tile_line = int(tile_name[8:12])
@@ -121,8 +97,6 @@ if tile_name:
 
     tile_list = [tile_name, tile_west, tile_east, tile_north, tile_south, tile_north_west, tile_south_west, tile_south_west, tile_north_east, tile_south_east]
 
-    # Checking if the tiles all exist
-
     final_tile_list = []
 
     for tile in tiles_geojson["features"]:
@@ -131,95 +105,171 @@ if tile_name:
             final_tile_list = list(set(final_tile_list))
 
 
-##################################### ASKING THE USER FOR A DETECTION RADIUS ############################################
-
-# small_radius = st.button("5km2")
-# big_radius = st.button("200km2")
-
-##################################### FILTERING THE DETECTIONS ############################################
-
-
 filtered_detections = []
-
-
-if tile_name:
-    for tile in final_tile_list:
-        for feature in detections_geojson['features']:
-            if feature['properties']['tile'] == tile:
-                filtered_detections.append(feature)
-    detections_geojson['features'] = filtered_detections
-
-# if small_radius:
-#     if tile_name:
-#         for feature in detections_geojson['features']:
-#             if feature['properties']['tile'] == tile_name:
-#                 filtered_detections.append(feature)
-#     detections_geojson['features'] = filtered_detections
-
-
-##################################### ADDING THE DETECTIONS TO THE MAP ############################################
 
 '''
 ## Start detection
 '''
 
 run_detection = st.button("DETECT!")
+show_heatmap = st.button("HEATMAP")
 
-# Instanciating a detection feature group
 detections_layer = folium.FeatureGroup(name='detections')
 
-# Adding the filtered detections to the feature group
-if run_detection:
-    for detection in detections_geojson["features"]:
-        geojson = folium.GeoJson(detection, name="detection", highlight_function=lambda x: {'weight': 3, 'color': 'green', 'fillOpacity': 0.5},
-                                           tooltip=folium.GeoJsonTooltip(fields=['tile'], aliases=['Nom']))
-        geojson.add_to(detections_layer)
-
-# Adding the feature group to the map
 if filtered_detections:
     detections_layer.add_to(m)
 
+def create_heatmap():
+    m2 = folium.Map(location=[address_coordinates[0], address_coordinates[1]],
+                    zoom_start=15, tiles=final_url, attr='IGN-F/Géoportail', max_zoom=19, min_zoom=15)
+    if address_coordinates:
+        folium.Marker(location=address_coordinates, tooltip=address).add_to(m2)
+        for tile in tiles_geojson["features"]:
+            tile_geom = shape(tile["geometry"])
 
-##################################### DISPLAYING THE MAP ############################################
+    points = []
+    for feature in data['features']:
+        points.append(feature['geometry']['coordinates'][::-1])
+
+    heatmap = HeatMap(points, radius=30)
+
+    heatmap.add_to(m2)
+
+    return m2
+
+def create_global_heatmap():
+    if address_coordinates:
+        center_location = [address_coordinates[0], address_coordinates[1]]
+    else:
+        center_location = [latitude, longitude]
+
+    m3 = folium.Map(location=center_location,
+                    zoom_start=11, tiles=final_url, attr='IGN-F/Géoportail')
+    if address_coordinates:
+        folium.Marker(location=address_coordinates, tooltip=address).add_to(m3)
+        for tile in tiles_geojson["features"]:
+            tile_geom = shape(tile["geometry"])
+
+    points = []
+    for feature in data['features']:
+        points.append(feature['geometry']['coordinates'][::-1])
+
+    heatmap = HeatMap(points, radius=12)
+
+    heatmap.add_to(m3)
+    return m3
 
 
-folium_static(m, width=1300, height=800)    
+map_container = st.empty()
+
+if show_heatmap:
+    if address_coordinates:
+        m2 = create_heatmap()
+        marker_cluster = MarkerCluster().add_to(m2)
+        folium.ClickForMarker(popup="Add a marker").add_to(m2)
+        folium_static(m2, width=1300, height=800)
+    else:
+        '''
+        ### Please enter an address
+        '''
+
+elif global_heatmap:
+    m3 = create_global_heatmap()
+    marker_cluster = MarkerCluster().add_to(m3)
+    folium.ClickForMarker(popup="Add a marker").add_to(m3)
+    folium_static(m3, width=1300, height=800)
 
 
-##################################### TILES DISPLAY ############################################
+# Si le bouton "DETECT!" est cliqué, afficher la carte principale dans le conteneur vide
+else:
+    if not address_coordinates and run_detection:
+        '''
+        ### Please enter an address
+        '''
+    else: 
+        if run_detection and address_coordinates:
+            map_container = folium.Map(location=[latitude, longitude], zoom_start=13, tiles=final_url, attr='IGN-F/Géoportail', max_zoom = 19)
+            folium.Marker(location=address_coordinates, tooltip=address).add_to(map_container)
+            if tile_name:
+                for tile in final_tile_list:
+                    tile_geom = None
+                    for t in tiles_geojson["features"]:
+                        if t["properties"]["NOM"] == tile:
+                            tile_geom = shape(t["geometry"])
+                            break
+                    if tile_geom is not None:
+                        tile_contour = folium.GeoJson(tile_geom.__geo_interface__, name="tile_contour", style_function=lambda x: {'color': 'red', 'weight': 1, 'fillOpacity': 0})
+                        tile_contour.add_to(map_container)
 
-# # Tile Layer group
-# tile_layer = folium.FeatureGroup(name='tiles')
+                        for feature in detections_geojson['features']:
+                            if feature['properties']['tile'] == tile:
+                                filtered_detections.append(feature)
+                    
+                        if address_coordinates:
+                            folium.Marker(location=address_coordinates, tooltip=address).add_to(map_container)
+                            map_container.fit_bounds([[address_coordinates[0], address_coordinates[1]]])
 
-# # Addding tiles to the map
-# for tile in tiles_geojson["features"]:
-#     properties = tile["properties"]
-#     name = properties["NOM"]
-#     geojson = folium.GeoJson(tile, name=name, highlight_function=lambda x: {'weight': 3, 'fillOpacity': 0.5},
-#                                            tooltip=folium.GeoJsonTooltip(fields=['NOM'], aliases=['Nom']))
-#     geojson.add_to(tilrs_layer)
+                detections_geojson['features'] = filtered_detections
 
-# # Adding tiles to map
-# tiles_layer.add_to(m)
-
-
-
-
-
-
-
-
-
-
-# Detections Bx (centroides)
-# https://drive.google.com/file/d/1i38Fh7_e9-_h6vGV0mOXKxci2rrq9FeJ/view?usp=share_link
-
-# Detections Bx (polygones)
-# https://drive.google.com/file/d/18GQ7-AlPia92Um6wTPyqXpMeVyVqcJkd/view?usp=share_link
+                detections_layer = folium.FeatureGroup(name='detections')
+                for detection in detections_geojson["features"]:
+                    geojson = folium.GeoJson(
+                        detection, 
+                        name="detection", 
+                        highlight_function=lambda x: {'fillColor': '#ff69b4', 'weight': 8, 'color': 'green', 'fillOpacity': 0.8},
+                        tooltip=folium.GeoJsonTooltip(fields=['SURFACE', 'kWp'], aliases=['Surface =', 'kWp =']))
+                    geojson.add_to(detections_layer)
+                    total_detections += 1
+                    total_surface += detection['properties']['SURFACE']
+                    total_kWp += detection['properties']['kWp']
+                if filtered_detections:
+                    detections_layer.add_to(map_container)
 
 
-# Nb par communes
-# https://drive.google.com/file/d/1tT2dUtoKPTF6O0xLnVogby7ws4QoisU6/view?usp=share_link
+            folium.TileLayer(
+                    tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+                    attr='Google',
+                    name='Google Maps',
+                    overlay=True,
+                    control=False,
+                    max_zoom=16
+                ).add_to(map_container)
 
-# Dalles
-# https://drive.google.com/file/d/10JA-3LG6QMX_mC9Z2Ll1z8xT5Oc5La5Y/view?usp=share_link
+
+            marker_cluster = MarkerCluster().add_to(map_container)
+            folium.ClickForMarker(popup="Add a marker").add_to(map_container)
+
+            folium.TileLayer('stamentonerlabels', opacity=0.5).add_to(map_container)
+            folium_static(map_container, width=1300, height=800)
+
+'''
+## Detection Summary : 
+'''
+if run_detection:
+    st.write(f"For a surface of approximately 220 km² around {address}")
+    st.write(f"Total Detections: **{total_detections}**")
+    st.write(f"Total Surface: **{total_surface:.2f} m²**")
+    st.write(f"Total kWp: **{total_kWp:.2f} kWp**")
+    
+else:
+    st.markdown(
+
+    '''
+    ### _No detections yet._
+    
+    <br><br><br><br><br>
+
+    ''', unsafe_allow_html=True
+)
+
+st.empty()
+st.empty()  
+st.empty()
+st.empty()
+st.empty()
+st.markdown(
+
+'''
+Merci d'utiliser PanoMapper, une carte de détection plus grande vous sera offerte, dès qu'on arrivera à faire tourner cette VM de mort
+'''
+)
