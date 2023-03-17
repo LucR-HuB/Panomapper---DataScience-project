@@ -280,10 +280,10 @@ elif run_building:
                 condition = True
 
     if address and condition:
-        st.write(f"You have a solar panels surface area of **:[{round(selected_raw['SURFACE_PV'])} m²]**, which means a nominal power of **:blue[{round(selected_raw['kWp_SUM'])} KWp]**")
-        st.write(f"You may produce **:[{round(selected_raw['kWp_SUM']*1000*0.85)} kWh per year]**")
-        st.write(f"You have a rooftop surface area of **:[{round(selected_raw['SURFACE_BA'])} m²]**")
-        st.write(f"If you entirely equip your rooftop with solar panels, vous could produce about **:[{round(selected_raw['SURFACE_BA']*1000/8*0.85)} kWp per year]**")
+        st.write(f"You have a solar panels surface area of **:{round(selected_raw['SURFACE_PV'])} m²**, which means a nominal power of **:{round(selected_raw['kWp_SUM'])} KWp**")
+        st.write(f"You may produce **:{round(selected_raw['kWp_SUM']*1000*0.85)} kWh per year**")
+        st.write(f"You have a rooftop surface area of **:{round(selected_raw['SURFACE_BA'])} m²**")
+        st.write(f"If you entirely equip your rooftop with solar panels, vous could produce about **:{round(selected_raw['SURFACE_BA']*1000/8*0.85)} kWp per year**")
 
         # Instanciating the selected building feature group
         building_layer = folium.FeatureGroup(name='building')
